@@ -11,7 +11,8 @@ public class MetalDoor : MonoBehaviour
     {
         if (canOpen == true)
         {
-            if (Input.GetKeyDown(KeyCode.E))
+            // Klavye devre dışı: E artık telefondan gelen E_TETIKLE komutuyla tetiklenir.
+            if (NetworkInputController.ConsumeInteract())
             {
                 StartCoroutine(OpeningDoor());
             }
