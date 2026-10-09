@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 /// <summary>
 /// Tek bir TCP portunda hem telefon kumanda sayfasını (HTTP) hem de komut kanalını (WebSocket, RFC 6455) sunar.
 /// Unity API'si KULLANMAZ; tüm olaylar thread-pool iş parçacıklarından tetiklenir.
-/// Ana iş parçacığına aktarım NetworkInputController tarafından yapılır.
+/// Telefon sayfasına PageProvider ile verilen HTML sunulur; telefona Broadcast ile metin gönderilebilir.
 /// </summary>
 public sealed class LocalCommandServer : IDisposable
 {
@@ -19,8 +19,22 @@ public sealed class LocalCommandServer : IDisposable
     private const int MaxPayloadBytes = 4096;
     private const int HeaderTimeoutMs = 5000;
 
+    private const string FallbackPage =
+        "<!DOCTYPE html><html lang='tr'><head><meta charset='utf-8'>" +
+        "<meta name='viewport' content='width=device-width,initial-scale=1'></head>" +
+        "<body style='background:#000;color:#f55;font-family:sans-serif;padding:24px'>" +
+        "<h2>kumanda.html bulunamadi</h2>" +
+        "<p>Dosya oyunun StreamingAssets klasorunde olmali: StreamingAssets/kumanda.html</p></body></html>";
+
+    private sealed class Connection
+    {
+        public NetworkStream Stream;
+        public readonly SemaphoreSlim WriteLock = new SemaphoreSlim(1, 1);
+    }
+
     private readonly int _port;
     private readonly ConcurrentDictionary<TcpClient, byte> _activeClients = new ConcurrentDictionary<TcpClient, byte>();
+    private readonly ConcurrentDictionary<Connection, byte> _sockets = new ConcurrentDictionary<Connection, byte>();
     private TcpListener _listener;
     private volatile bool _stopping;
     private int _clientCount;
@@ -30,6 +44,9 @@ public sealed class LocalCommandServer : IDisposable
 
     /// <summary>Teşhis amaçlı günlük çıktısı (thread-pool iş parçacığında çalışabilir).</summary>
     public Action<string> Log;
+
+    /// <summary>Telefona sunulacak kumanda sayfasının HTML'ini döndürür (thread-pool'dan çağrılır).</summary>
+    public Func<string> PageProvider;
 
     public int Port { get { return _port; } }
     public bool IsListening { get; private set; }
@@ -64,6 +81,20 @@ public sealed class LocalCommandServer : IDisposable
         return true;
     }
 
+    /// <summary>Bağlı tüm telefonlara metin mesajı gönderir (örn. "VIBRATE"). Beklemeden döner.</summary>
+    public void Broadcast(string text)
+    {
+        byte[] payload = Encoding.UTF8.GetBytes(text);
+        foreach (Connection c in _sockets.Keys)
+        {
+            Connection conn = c;
+            Task ignored = Task.Run(async delegate
+            {
+                try { await SendFrameAsync(conn, 0x1, payload); } catch { /* telefon kopmuş olabilir */ }
+            });
+        }
+    }
+
     public void Dispose()
     {
         _stopping = true;
@@ -76,6 +107,7 @@ public sealed class LocalCommandServer : IDisposable
             try { client.Close(); } catch { /* yoksay */ }
         }
         _activeClients.Clear();
+        _sockets.Clear();
     }
 
     // ------------------------------------------------------------ Kabul döngüsü
@@ -105,6 +137,7 @@ public sealed class LocalCommandServer : IDisposable
     private async Task HandleClientAsync(TcpClient client)
     {
         bool counted = false;
+        Connection connection = null;
         try
         {
             using (client)
@@ -130,11 +163,13 @@ public sealed class LocalCommandServer : IDisposable
 
                 await SendHandshakeAsync(stream, wsKey);
 
+                connection = new Connection { Stream = stream };
+                _sockets[connection] = 0;
                 counted = true;
                 Interlocked.Increment(ref _clientCount);
                 Log?.Invoke("Telefon baglandi: " + client.Client.RemoteEndPoint);
 
-                await ReceiveLoopAsync(stream);
+                await ReceiveLoopAsync(connection);
             }
         }
         catch (Exception)
@@ -145,6 +180,7 @@ public sealed class LocalCommandServer : IDisposable
         {
             byte removed;
             _activeClients.TryRemove(client, out removed);
+            if (connection != null) _sockets.TryRemove(connection, out removed);
             if (counted)
             {
                 Interlocked.Decrement(ref _clientCount);
@@ -191,7 +227,7 @@ public sealed class LocalCommandServer : IDisposable
         return null;
     }
 
-    private static async Task ServeHttpAsync(NetworkStream stream, string requestLine)
+    private async Task ServeHttpAsync(NetworkStream stream, string requestLine)
     {
         string[] parts = requestLine.Split(' ');
         string path = parts.Length >= 2 ? parts[1] : "/";
@@ -202,11 +238,14 @@ public sealed class LocalCommandServer : IDisposable
         string contentType = "text/plain; charset=utf-8";
         byte[] body;
 
-        if (parts.Length >= 1 && parts[0] == "GET" && (path == "/" || path == "/index.html" || path == "/kumanda"))
+        bool isPage = path == "/" || path == "/index.html" || path == "/kumanda" || path == "/kumanda.html";
+        if (parts.Length >= 1 && parts[0] == "GET" && isPage)
         {
+            string html = null;
+            try { if (PageProvider != null) html = PageProvider(); } catch { /* dosya okunamadı */ }
             status = "200 OK";
             contentType = "text/html; charset=utf-8";
-            body = Encoding.UTF8.GetBytes(ControllerPage.Html);
+            body = Encoding.UTF8.GetBytes(string.IsNullOrEmpty(html) ? FallbackPage : html);
         }
         else if (path == "/favicon.ico")
         {
@@ -249,8 +288,9 @@ public sealed class LocalCommandServer : IDisposable
         await stream.FlushAsync();
     }
 
-    private async Task ReceiveLoopAsync(NetworkStream stream)
+    private async Task ReceiveLoopAsync(Connection connection)
     {
+        NetworkStream stream = connection.Stream;
         var head = new byte[2];
         var maskKey = new byte[4];
         var message = new MemoryStream();
@@ -281,7 +321,7 @@ public sealed class LocalCommandServer : IDisposable
             // İstemci → sunucu çerçeveleri maskeli olmak zorundadır; aşırı büyük yükleri reddet.
             if (!masked || length < 0 || length > MaxPayloadBytes)
             {
-                await SendFrameAsync(stream, 0x8, new byte[0]);
+                await SendFrameAsync(connection, 0x8, new byte[0]);
                 return;
             }
 
@@ -293,11 +333,11 @@ public sealed class LocalCommandServer : IDisposable
             switch (opcode)
             {
                 case 0x8: // close
-                    await SendFrameAsync(stream, 0x8, payload.Length <= 125 ? payload : new byte[0]);
+                    await SendFrameAsync(connection, 0x8, payload.Length <= 125 ? payload : new byte[0]);
                     return;
 
                 case 0x9: // ping
-                    await SendFrameAsync(stream, 0xA, payload.Length <= 125 ? payload : new byte[0]);
+                    await SendFrameAsync(connection, 0xA, payload.Length <= 125 ? payload : new byte[0]);
                     break;
 
                 case 0xA: // pong
@@ -344,62 +384,36 @@ public sealed class LocalCommandServer : IDisposable
         }
     }
 
-    private static async Task SendFrameAsync(NetworkStream stream, int opcode, byte[] payload)
+    /// <summary>Sunucu → istemci çerçevesi (maskesiz). Aynı bağlantıya eşzamanlı yazımlar kilitle sıralanır.</summary>
+    private static async Task SendFrameAsync(Connection connection, int opcode, byte[] payload)
     {
-        // Sunucu → istemci çerçeveleri maskesizdir. Burada yalnızca kısa (<126 bayt) kontrol çerçeveleri gönderilir.
-        var frame = new byte[2 + payload.Length];
-        frame[0] = (byte)(0x80 | opcode);
-        frame[1] = (byte)payload.Length;
-        Buffer.BlockCopy(payload, 0, frame, 2, payload.Length);
-        await stream.WriteAsync(frame, 0, frame.Length);
-        await stream.FlushAsync();
-    }
-}
+        byte[] frame;
+        if (payload.Length < 126)
+        {
+            frame = new byte[2 + payload.Length];
+            frame[0] = (byte)(0x80 | opcode);
+            frame[1] = (byte)payload.Length;
+            Buffer.BlockCopy(payload, 0, frame, 2, payload.Length);
+        }
+        else
+        {
+            frame = new byte[4 + payload.Length];
+            frame[0] = (byte)(0x80 | opcode);
+            frame[1] = 126;
+            frame[2] = (byte)(payload.Length >> 8);
+            frame[3] = (byte)(payload.Length & 0xFF);
+            Buffer.BlockCopy(payload, 0, frame, 4, payload.Length);
+        }
 
-/// <summary>Telefon tarayıcısına sunulan, tek dosyalık kumanda sayfası.</summary>
-internal static class ControllerPage
-{
-    public const string Html = @"<!DOCTYPE html>
-<html lang='tr'><head><meta charset='utf-8'>
-<meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'>
-<title>Oyun Kumandasi</title>
-<style>
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-html,body{margin:0;height:100%;background:#0d0d10;color:#eee;font-family:system-ui,sans-serif;touch-action:none;overflow:hidden}
-body{display:flex;flex-direction:column;padding:12px;gap:12px}
-#st{text-align:center;font-size:15px;padding:6px;border-radius:8px;background:#3a2a10}
-#st.ok{background:#12351f}
-button{border:0;border-radius:18px;color:#fff;font-size:26px;font-weight:700;touch-action:none}
-#fwd{flex:3;background:#2a6f3a;font-size:40px}
-#fwd.on{background:#43b05a}
-.row{flex:2;display:flex;gap:12px}
-.row button{flex:1}
-#fl{background:#8a6a10}
-#e{background:#2a4a8a}
-button:active{filter:brightness(1.4)}
-</style></head><body>
-<div id='st'>Baglaniyor...</div>
-<button id='fwd'>ILERI</button>
-<div class='row'><button id='fl'>FENER</button><button id='e'>E</button></div>
-<script>
-var ws=null,held=false,st=document.getElementById('st'),fwd=document.getElementById('fwd');
-function send(c){if(ws&&ws.readyState===1){ws.send(c);return true}return false}
-function buzz(){if(navigator.vibrate)navigator.vibrate(12)}
-function connect(){
-  ws=new WebSocket('ws://'+location.host+'/ws');
-  ws.onopen=function(){st.textContent='Bagli';st.className='ok'};
-  ws.onclose=function(){held=false;fwd.className='';st.textContent='Baglanti koptu, yeniden deneniyor...';st.className='';setTimeout(connect,1000)};
-  ws.onerror=function(){try{ws.close()}catch(e){}};
-}
-function press(){if(held)return;held=true;fwd.className='on';send('ILERI_BAS');buzz()}
-function release(){if(!held)return;held=false;fwd.className='';send('ILERI_BIRAK')}
-fwd.addEventListener('pointerdown',function(e){fwd.setPointerCapture(e.pointerId);press()});
-['pointerup','pointercancel','lostpointercapture'].forEach(function(n){fwd.addEventListener(n,release)});
-document.getElementById('fl').addEventListener('pointerdown',function(){send('FENER_TETIKLE');buzz()});
-document.getElementById('e').addEventListener('pointerdown',function(){send('E_TETIKLE');buzz()});
-document.addEventListener('visibilitychange',function(){if(document.hidden)release()});
-document.addEventListener('contextmenu',function(e){e.preventDefault()});
-setInterval(function(){send('PING')},1000);
-connect();
-</script></body></html>";
+        await connection.WriteLock.WaitAsync();
+        try
+        {
+            await connection.Stream.WriteAsync(frame, 0, frame.Length);
+            await connection.Stream.FlushAsync();
+        }
+        finally
+        {
+            connection.WriteLock.Release();
+        }
+    }
 }
