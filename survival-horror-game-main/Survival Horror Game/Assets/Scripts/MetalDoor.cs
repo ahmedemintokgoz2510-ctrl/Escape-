@@ -6,6 +6,12 @@ public class MetalDoor : MonoBehaviour
     [SerializeField] bool canOpen;
     [SerializeField] GameObject playerCamera;
     [SerializeField] GameObject metalDoorCamera;
+    [Tooltip("Kapı açılınca karakterin donup bekleyeceği süre (sn).")]
+    [SerializeField] float freezeSeconds = 1f;
+    [Tooltip("Kapı kamerasının gösterileceği süre (sn); bitince korkunç son başlar.")]
+    [SerializeField] float doorCutsceneSeconds = 3f;
+
+    bool opening;
 
     bool IsLocked()
     {
@@ -14,7 +20,7 @@ public class MetalDoor : MonoBehaviour
 
     void Update()
     {
-        if (canOpen == true)
+        if (canOpen == true && !opening)
         {
             // Klavye devre dışı: E artık telefondan gelen E_TETIKLE komutuyla tetiklenir.
             if (NetworkInputController.ConsumeInteract())
@@ -33,6 +39,8 @@ public class MetalDoor : MonoBehaviour
 
     void OnMouseOver()
     {
+        if (opening) return;
+
         if (PlayerCasting.distanceFromTarget < 5)
         {
             canOpen = true;
@@ -52,6 +60,8 @@ public class MetalDoor : MonoBehaviour
 
     void OnMouseExit()
     {
+        if (opening) return;
+
         canOpen = false;
         UIController.actionText = "";
         UIController.commandText = "";
@@ -60,14 +70,22 @@ public class MetalDoor : MonoBehaviour
 
     IEnumerator OpeningDoor()
     {
+        opening = true;
+        canOpen = false;
+        UIController.uiActive = false;
+
+        // 1) Kapı açıldığı an karakter 1 saniye donup kalır.
+        if (PuzzleManager.Instance != null) PuzzleManager.Instance.BeginEnding();
+        NetworkInputController.SetFrozen(true);
+        yield return new WaitForSeconds(freezeSeconds);
+
+        // 2) Kapı kamerası: tam dışarı çıkılacakken...
         metalDoorCamera.SetActive(true);
         playerCamera.SetActive(false);
+        yield return new WaitForSeconds(doorCutsceneSeconds);
 
-        yield return new WaitForSeconds(3);
-
-        playerCamera.SetActive(true);
-        metalDoorCamera.SetActive(false);
-
+        // 3) ...canavar fırlar (JumpscareController), 2 sn sonra oyun kapanır.
         if (PuzzleManager.Instance != null) PuzzleManager.Instance.PlayerEscaped();
+        else JumpscareController.Play();
     }
 }
