@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#010801">
+<title>KUMANDA // CAM 01</title>
+<style>
+:root{
+  --g:#39ff14; --g2:rgba(57,255,20,.55); --g3:rgba(57,255,20,.14);
+  --blood:#c2000b; --blood-dark:#4a0006; --blood-glow:rgba(255,20,30,.55);
+  --pad:min(66vh,40vw);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{margin:0;height:100%;overflow:hidden;background:#010801;color:var(--g);
+  font-family:'Courier New',ui-monospace,monospace;touch-action:none;overscroll-behavior:none}
+
+/* ---------- gece görüşü katmanları ---------- */
+#sweep{position:fixed;left:50%;top:50%;width:170vmax;height:170vmax;margin:-85vmax 0 0 -85vmax;pointer-events:none;
+  background:conic-gradient(from 0deg,rgba(57,255,20,0) 0deg,rgba(57,255,20,.10) 40deg,rgba(57,255,20,0) 60deg,rgba(57,255,20,0) 360deg);
+  animation:spin 7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#glow{position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(20,90,10,.55) 0%,rgba(2,18,2,.85) 60%,#000 100%)}
+#noise{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated;opacity:.16;mix-blend-mode:screen}
+#scan{position:fixed;inset:-40px 0;pointer-events:none;opacity:.55;
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,.55) 0,rgba(0,0,0,.55) 1px,rgba(0,0,0,0) 3px,rgba(0,0,0,0) 4px);
+  animation:scan 1.1s linear infinite}
+@keyframes scan{to{transform:translateY(4px)}}
+#roll{position:fixed;left:0;right:0;height:22vh;top:-25vh;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(57,255,20,0),rgba(57,255,20,.13),rgba(57,255,20,0));
+  animation:roll 5.5s linear infinite}
+@keyframes roll{to{transform:translateY(135vh)}}
+#vig{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 14vmin 4vmin #000}
+#flick{position:fixed;inset:0;pointer-events:none;background:#000;animation:flick 3.7s steps(1) infinite}
+@keyframes flick{0%{opacity:0}7%{opacity:.10}8%{opacity:0}43%{opacity:.04}44%{opacity:.14}45%{opacity:0}78%{opacity:.07}79%{opacity:0}100%{opacity:0}}
+
+/* ---------- HUD ---------- */
+.hud{position:fixed;left:0;right:0;display:flex;justify-content:space-between;align-items:center;
+  padding:0 max(14px,env(safe-area-inset-right)) 0 max(14px,env(safe-area-inset-left));pointer-events:none;
+  font-size:clamp(11px,2.6vh,16px);letter-spacing:.14em;text-shadow:0 0 6px var(--g)}
+#hudTop{top:max(8px,env(safe-area-inset-top))}
+#hudBottom{bottom:max(6px,env(safe-area-inset-bottom));opacity:.8}
+.rec{color:#ff2a2a;text-shadow:0 0 8px #f00}
+.rec i{display:inline-block;width:.8em;height:.8em;border-radius:50%;background:#f00;margin-right:.5em;animation:blink 1s steps(1) infinite;vertical-align:-.05em}
+@keyframes blink{50%{opacity:0}}
+#st.bad{color:#ffb000;text-shadow:0 0 6px #ffb000}
+
+/* ---------- yerleşim ---------- */
+#app{position:fixed;inset:0;display:flex;justify-content:space-between;align-items:center;
+  padding:calc(9vh + env(safe-area-inset-top)) max(4vw,env(safe-area-inset-right)) calc(5vh + env(safe-area-inset-bottom)) max(4vw,env(safe-area-inset-left))}
+
+/* ---------- D-PAD ---------- */
+#pad{position:relative;width:var(--pad);height:var(--pad);flex:none;touch-action:none}
+#pad .arm{position:absolute;display:flex;align-items:center;justify-content:center;flex-direction:column;
+  border:2px solid var(--g2);background:var(--g3);border-radius:14px;
+  color:var(--g);font-weight:700;box-shadow:0 0 12px rgba(57,255,20,.25),inset 0 0 16px rgba(57,255,20,.08);transition:background .06s,box-shadow .06s}
+#pad .arm b{font-size:calc(var(--pad)*.17);line-height:1}
+#pad .arm small{font-size:calc(var(--pad)*.05);letter-spacing:.12em;opacity:.8;margin-top:2px}
+#pad .arm.on{background:rgba(57,255,20,.45);box-shadow:0 0 26px rgba(57,255,20,.8),inset 0 0 22px rgba(57,255,20,.5);color:#eaffe0}
+#aU{left:33.3%;top:0;width:33.4%;height:36%}
+#aD{left:33.3%;bottom:0;width:33.4%;height:36%}
+#aL{left:0;top:33.3%;width:36%;height:33.4%}
+#aR{right:0;top:33.3%;width:36%;height:33.4%}
+#hub{position:absolute;left:33.3%;top:33.3%;width:33.4%;height:33.4%;border:2px solid var(--g2);border-radius:50%;
+  background:radial-gradient(circle,rgba(57,255,20,.3),rgba(57,255,20,.05));box-shadow:0 0 14px rgba(57,255,20,.3)}
+#knob{position:absolute;left:50%;top:50%;width:34%;height:34%;margin:-17% 0 0 -17%;border-radius:50%;
+  background:radial-gradient(circle,#b6ff9e,var(--g));box-shadow:0 0 18px var(--g);transition:transform .05s}
+
+/* ---------- kan kırmızısı butonlar ---------- */
+#btns{display:flex;flex-direction:column;gap:3.5vh;align-items:center;justify-content:center;height:100%}
+.bb{position:relative;width:min(34vh,26vw);height:min(34vh,26vw);border-radius:50%;border:3px solid #ff3b3b;color:#ffd9d9;
+  background:radial-gradient(circle at 35% 30%,#ff2b2b 0%,var(--blood) 38%,var(--blood-dark) 100%);
+  box-shadow:0 0 22px var(--blood-glow),inset 0 0 26px rgba(0,0,0,.65),inset 0 -8px 18px rgba(0,0,0,.5);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:none;
+  font-family:inherit;text-shadow:0 0 8px #000,0 0 14px #f00;font-weight:700;letter-spacing:.08em;transition:transform .05s,filter .05s}
+.bb::after{content:'';position:absolute;left:12%;right:12%;bottom:-1px;height:30%;border-radius:0 0 50% 50%;
+  background:repeating-linear-gradient(90deg,rgba(90,0,0,.9) 0 6px,rgba(0,0,0,0) 6px 14px);opacity:.35;pointer-events:none}
+.bb .ico{font-size:min(10vh,8vw);line-height:1}
+.bb .lbl{font-size:min(3.6vh,2.9vw);margin-top:.4vh;text-align:center;line-height:1.1}
+.bb.on{transform:scale(.93);filter:brightness(1.55)}
+
+/* ---------- uyarılar ---------- */
+#rotate{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;
+  background:#000;z-index:20;text-align:center;font-size:20px;letter-spacing:.12em;text-shadow:0 0 10px var(--g);padding:24px}
+#rotate .ph{font-size:64px;display:block;animation:tilt 2s ease-in-out infinite}
+@keyframes tilt{0%,100%{transform:rotate(0)}50%{transform:rotate(90deg)}}
+@media (orientation:portrait){#rotate{display:flex}#app,.hud{visibility:hidden}}
+
+#scare{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;flex-direction:column;
+  background:#300;color:#fff;font-size:12vmin;font-weight:700;letter-spacing:.1em;text-align:center;text-shadow:0 0 30px #f00}
+#scare small{font-size:3.6vmin;letter-spacing:.2em;margin-top:2vmin;opacity:.9}
+#scare.show{display:flex;animation:shake .07s linear infinite,redflash .25s steps(1) infinite}
+@keyframes shake{0%{transform:translate(0,0)}25%{transform:translate(-12px,6px)}50%{transform:translate(10px,-8px)}75%{transform:translate(-6px,-10px)}100%{transform:translate(8px,8px)}}
+@keyframes redflash{0%{background:#600}50%{background:#000}}
+</style>
+</head>
+<body>
+<div id="sweep"></div>
+<div id="glow"></div>
+<canvas id="noise" width="128" height="72"></canvas>
+<div id="roll"></div>
+<div id="scan"></div>
+<div id="flick"></div>
+<div id="vig"></div>
+
+<div class="hud" id="hudTop">
+  <span class="rec"><i></i>REC <span id="clock">00:00:00</span></span>
+  <span id="st" class="bad">BAĞLANTI KURULUYOR…</span>
+  <span>CAM 01 // NV</span>
+</div>
+
+<div id="app">
+  <div id="pad">
+    <div class="arm" id="aU"><b>▲</b><small>İLERİ</small></div>
+    <div class="arm" id="aD"><b>▼</b><small>GERİ</small></div>
+    <div class="arm" id="aL"><b>◀</b><small>SOL</small></div>
+    <div class="arm" id="aR"><b>▶</b><small>SAĞ</small></div>
+    <div id="hub"><div id="knob"></div></div>
+  </div>
+
+  <div id="btns">
+    <button class="bb" id="bFlash" type="button"><span class="ico">🔦</span><span class="lbl">EL FENERİ</span></button>
+    <button class="bb" id="bUse" type="button"><span class="ico">E</span><span class="lbl">ETKİLEŞİM</span></button>
+  </div>
+</div>
+
+<div class="hud" id="hudBottom"><span>SOL: YÜRÜ / DÖN</span><span>SAĞ: FENER • ETKİLEŞİM</span></div>
+
+<div id="rotate"><span class="ph">📱</span>TELEFONU YATAY ÇEVİR</div>
+<div id="scare">KAÇIŞ YOK<small>SON</small></div>
+
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+
+  /* ---------- bağlantı: IP yazmaya gerek yok, sayfa hangi adresten açıldıysa oraya bağlanır ---------- */
+  var ws = null, lastMove = '', stEl = $('st');
+  function setStatus(text, ok){ stEl.textContent = text; stEl.className = ok ? '' : 'bad'; }
+  function send(msg){ if (ws && ws.readyState === 1) { ws.send(msg); return true; } return false; }
+
+  function connect(){
+    try { ws = new WebSocket('ws://' + location.host + '/ws'); }
+    catch (e) { setTimeout(connect, 1000); return; }
+    ws.onopen = function(){ lastMove = ''; setStatus('BAĞLANTI AKTİF', true); sendMove(0, 0); };
+    ws.onmessage = function(ev){ if (String(ev.data).trim().toUpperCase() === 'VIBRATE') scare(); };
+    ws.onclose = function(){ setStatus('BAĞLANTI KOPTU… YENİDEN DENİYOR', false); lastMove = ''; padRelease(); setTimeout(connect, 900); };
+    ws.onerror = function(){ try { ws.close(); } catch (e) {} };
+  }
+
+  function sendMove(x, y){
+    var msg = 'MOVE:' + x.toFixed(2) + ',' + y.toFixed(2);
+    if (msg === lastMove) return;
+    if (send(msg)) lastMove = msg;
+  }
+  setInterval(function(){ send('PING'); }, 1000);
+
+  function buzz(ms){ try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+
+  /* ---------- tam ekran + yatay kilit (destekleyen tarayıcılarda) ---------- */
+  var fsTried = false;
+  document.addEventListener('pointerdown', function(){
+    if (fsTried) return; fsTried = true;
+    try {
+      var el = document.documentElement;
+      var p = el.requestFullscreen ? el.requestFullscreen() : null;
+      if (p && p.then) p.then(function(){ if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }).catch(function(){});
+    } catch (e) {}
+  }, { once: true });
+
+  /* ---------- D-pad ---------- */
+  var pad = $('pad'), knob = $('knob'), arms = { U: $('aU'), D: $('aD'), L: $('aL'), R: $('aR') };
+  var padId = null;
+
+  function setArms(x, y){
+    arms.U.classList.toggle('on', y > 0); arms.D.classList.toggle('on', y < 0);
+    arms.L.classList.toggle('on', x < 0); arms.R.classList.toggle('on', x > 0);
+  }
+  function padUpdate(e){
+    var r = pad.getBoundingClientRect();
+    var dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+    var dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    var mag = Math.sqrt(dx * dx + dy * dy), x = 0, y = 0;
+    if (mag > 0.22) {
+      x = Math.abs(dx) > 0.38 ? (dx > 0 ? 1 : -1) : 0;
+      y = Math.abs(dy) > 0.38 ? (dy < 0 ? 1 : -1) : 0;
+    }
+    var k = Math.min(1, mag), nx = mag ? dx / mag * k : 0, ny = mag ? dy / mag * k : 0;
+    knob.style.transform = 'translate(' + (nx * r.width * 0.22) + 'px,' + (ny * r.height * 0.22) + 'px)';
+    var prev = lastMove;
+    setArms(x, y);
+    sendMove(x, y);
+    if (lastMove !== prev && (x || y)) buzz(8);
+  }
+  function padRelease(){
+    padId = null; knob.style.transform = ''; setArms(0, 0); sendMove(0, 0);
+  }
+  pad.addEventListener('pointerdown', function(e){
+    if (padId !== null) return;
+    padId = e.pointerId; try { pad.setPointerCapture(e.pointerId); } catch (x) {}
+    padUpdate(e); e.preventDefault();
+  });
+  pad.addEventListener('pointermove', function(e){ if (e.pointerId === padId) { padUpdate(e); e.preventDefault(); } });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function(n){
+    pad.addEventListener(n, function(e){ if (e.pointerId === padId) padRelease(); });
+  });
+
+  /* ---------- kırmızı butonlar ---------- */
+  function bindButton(id, command){
+    var el = $(id), active = null;
+    el.addEventListener('pointerdown', function(e){
+      if (active !== null) return; active = e.pointerId;
+      try { el.setPointerCapture(e.pointerId); } catch (x) {}
+      el.classList.add('on'); send(command); buzz(15); e.preventDefault();
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function(n){
+      el.addEventListener(n, function(e){ if (e.pointerId === active) { active = null; el.classList.remove('on'); } });
+    });
+  }
+  bindButton('bFlash', 'FENER_TETIKLE');
+  bindButton('bUse', 'E_TETIKLE');
+
+  /* ---------- güvenlik: sayfa gizlenirse / odak giderse karakteri durdur ---------- */
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) padRelease(); });
+  window.addEventListener('blur', padRelease);
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  document.addEventListener('touchmove', function(e){ e.preventDefault(); }, { passive: false });
+
+  /* ---------- jumpscare: VIBRATE paketi ---------- */
+  function scare(){
+    buzz([300, 80, 500, 80, 900, 80, 1200]);
+    var el = $('scare'); el.classList.add('show');
+    setTimeout(function(){ el.classList.remove('show'); }, 4000);
+  }
+
+  /* ---------- REC sayacı ---------- */
+  var t0 = Date.now();
+  setInterval(function(){
+    var s = Math.floor((Date.now() - t0) / 1000), p = function(n){ return (n < 10 ? '0' : '') + n; };
+    $('clock').textContent = p(Math.floor(s / 3600)) + ':' + p(Math.floor(s / 60) % 60) + ':' + p(s % 60);
+  }, 1000);
+
+  /* ---------- parazit (yeşil statik) ---------- */
+  var cv = $('noise'), cx = cv.getContext('2d'), img = cx.createImageData(cv.width, cv.height);
+  function noise(){
+    var d = img.data;
+    for (var i = 0; i < d.length; i += 4) {
+      var v = Math.random() * 255;
+      d[i] = v * 0.15; d[i + 1] = v; d[i + 2] = v * 0.12; d[i + 3] = 255;
+    }
+    cx.putImageData(img, 0, 0);
+  }
+  noise(); setInterval(noise, 70);
+
+  connect();
+})();
+</script>
+</body>
+</html>
