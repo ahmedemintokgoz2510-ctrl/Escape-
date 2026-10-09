@@ -66,13 +66,19 @@ public class PuzzleManager : MonoBehaviour
         GameNotifier.Show("Kapı kilitli!", "Şifre notlarını bulmalısın (" + NotesFound + "/" + TotalNotes + ")", 4f);
     }
 
-    /// <summary>Çıkış kapısı açıldığında çağrılır.</summary>
+    /// <summary>Kapı açılma sahnesi başlarken canavarı durdurur (sahne sırasında yakalanılmasın).</summary>
+    public void BeginEnding()
+    {
+        if (_enemy != null) _enemy.Halt();
+    }
+
+    /// <summary>Çıkış kapısı açılıp dışarı çıkılacağı an çağrılır: korkunç son (jumpscare) başlar.</summary>
     public void PlayerEscaped()
     {
         if (_ended) return;
         _ended = true;
         if (_enemy != null) _enemy.Halt();
-        GameNotifier.Show("Tebrikler!", "Kaçmayı başardın.", 10f);
+        JumpscareController.Play();
     }
 
     private void ApplyAggression()
