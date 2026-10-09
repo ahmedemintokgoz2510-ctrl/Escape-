@@ -7,6 +7,11 @@ public class MetalDoor : MonoBehaviour
     [SerializeField] GameObject playerCamera;
     [SerializeField] GameObject metalDoorCamera;
 
+    bool IsLocked()
+    {
+        return PuzzleManager.Instance != null && !PuzzleManager.Instance.AllNotesFound;
+    }
+
     void Update()
     {
         if (canOpen == true)
@@ -14,7 +19,14 @@ public class MetalDoor : MonoBehaviour
             // Klavye devre dışı: E artık telefondan gelen E_TETIKLE komutuyla tetiklenir.
             if (NetworkInputController.ConsumeInteract())
             {
-                StartCoroutine(OpeningDoor());
+                if (IsLocked())
+                {
+                    PuzzleManager.Instance.ShowDoorLocked();
+                }
+                else
+                {
+                    StartCoroutine(OpeningDoor());
+                }
             }
         }
     }
@@ -24,8 +36,9 @@ public class MetalDoor : MonoBehaviour
         if (PlayerCasting.distanceFromTarget < 5)
         {
             canOpen = true;
-            UIController.actionText = "Open Door";
-            UIController.commandText = "Open";
+            bool locked = IsLocked();
+            UIController.actionText = locked ? "Kapı Kilitli" : "Kapıyı Aç";
+            UIController.commandText = locked ? "İncele" : "Aç";
             UIController.uiActive = true;
         }
         else
@@ -54,5 +67,7 @@ public class MetalDoor : MonoBehaviour
 
         playerCamera.SetActive(true);
         metalDoorCamera.SetActive(false);
+
+        if (PuzzleManager.Instance != null) PuzzleManager.Instance.PlayerEscaped();
     }
 }
